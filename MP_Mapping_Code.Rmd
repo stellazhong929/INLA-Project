@@ -136,7 +136,7 @@ new_map <- merge(map, nc_map, by="FIPS")
 ```
 
 ```{r}
-# Add labels on the Graph
+# Add label on the Graph
 label <- sprintf("<strong>%s</strong><br/>Mortality Rate: %s <br/>Percentage Change: %s",
   new_map$NAME, round(new_map$mx, 2), round(new_map$pct_change, 2)) %>%
   lapply(htmltools::HTML)
