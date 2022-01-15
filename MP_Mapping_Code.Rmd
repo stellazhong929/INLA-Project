@@ -39,7 +39,7 @@ df_county_pc <- df %>%
               mutate(pct_change = (mx/lead(mx) - 1) * 100) %>%
               arrange(desc(year_id))
 
-# Only year in 2014
+# Fiter to only year in 2014
 df_county_pc <- df_county_pc[1:3138,]
 
 ```
