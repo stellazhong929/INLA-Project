@@ -1,0 +1,154 @@
+---
+title: "MP_NewCode"
+author: "Wenxin Zhong"
+date: "12/17/2021"
+output: html_document
+---
+```{r, warning=F, message=F}
+library(readr)
+library(kableExtra)
+library(tidyverse)
+library(urbnmapr)
+library(maps)
+library(cowplot)
+library(extrafont)
+library(ggspatial)
+library(patchwork)
+library(statebins)
+library(data.table)
+library(leaflet)
+library(sf)
+library(rgdal)
+library(mapview)
+library(RColorBrewer)
+```
+
+# Read-in Data
+```{r, message=F, warning=F}
+df <- read_csv("cmr_bc_women_acs.csv", col_types = cols()) %>%
+                  mutate(location_name = as.factor(location_name))
+
+
+#Percentage change between 2007 and 2014
+
+df_county_pc <- df %>%
+              dplyr::select(2:12) %>%
+              filter((year_id == 2014) | (year_id == 2007)) %>%
+              group_by(FIPS) %>%
+              arrange(desc(year_id), .by_group = TRUE) %>%
+              mutate(pct_change = (mx/lead(mx) - 1) * 100) %>%
+              arrange(desc(year_id))
+
+df_county_pc <- df_county_pc[1:3138,]
+
+```
+
+
+# Mapping
+```{r}
+# Pre-processing
+us_state <- map_data("state")
+
+us_county <- map_data("county") %>% 
+            as.data.table()
+
+fipstab <-
+    transmute(county.fips, fips, county = sub(":.*", "", polyname))
+fipstab <- unique(fipstab)
+fipstab <-
+    separate(fipstab, county, c("region", "subregion"), sep = ",")
+
+us_county <- left_join(us_county, fipstab, c("region", "subregion"))
+setnames(us_county, c('fips'), c("FIPS"))
+
+# Merge two tables together
+df_county_pc$region <- tolower(df_county_pc$location_name)
+us_county_map <- left_join(us_county, df_county_pc, by = "FIPS")
+```
+
+```{r}
+# Map of continuous variable - mx
+p1 <- ggplot(data = us_county_map,
+            aes(x = long, y = lat,
+                group = group, fill = mx)) +
+    geom_polygon(aes(long, lat, group = group, fill = mx),
+                 color = "grey", size = 0.1) +
+    geom_polygon(aes(long, lat, group = group),
+                 fill = NA, data = us_state, color = "lightgrey") +
+    coord_map("bonne", parameters=45) +
+    scale_fill_gradientn(colours = colorspace::sequential_hcl(5,"Red-Yellow"), trans = "reverse") +
+    labs(title = "Mortality Rate in Year 2014", fill = "Mortality Rate") + 
+    theme_map() +
+    theme(legend.position = "bottom")
+p1
+
+# Map of continuous variable - percentage age
+p2 <- ggplot(data = us_county_map,
+            aes(x = long, y = lat,
+                group = group, fill = pct_change)) + 
+    geom_polygon(aes(long, lat, group = group, fill = pct_change),
+                 color = "grey", size = 0.1) +
+    geom_polygon(aes(long, lat, group = group),
+                 fill = NA, data = us_state, color = "darkgrey") +
+    coord_map("bonne", parameters=45) +
+    scale_fill_gradientn(colours = colorspace::diverge_hcl(10)) + 
+    labs(title = "Percentage Change of mx between Year 2014 and Year 2007", fill = "Percentage Change") + 
+    theme_map() +
+    theme(legend.position = "bottom")
+p2
+```
+
+# Focusing on NC
+```{r, fig.width=6, fig.height=5}
+nc_map <- us_county_map %>%
+          filter(region.x == "north carolina")
+
+nc_first <- nc_map[match(unique(nc_map$FIPS), nc_map$FIPS),]
+
+# Map of continuous variable - mx
+highest_mr <- nc_map[, .(nc_avg_mr = mean(mx)), by = subregion][order(desc(nc_avg_mr))][1:10]
+  
+p3 <- ggplot(data = nc_map,
+            aes(x = long, y = lat,
+                group = group, fill = mx)) +
+    geom_polygon(aes(long, lat, group = group, fill = mx),
+                 color = "grey", size = 0.1) +
+    geom_polygon(aes(long, lat, group = group),
+                 fill = NA, data = nc_map, color = "lightgrey") +
+    coord_map("bonne", parameters=45) + 
+    geom_text(data = nc_first[subregion %in% highest_mr$subregion], 
+              aes(x = long, y = lat, label = subregion), size = 5, color = "black") +
+    scale_fill_gradientn(colours = colorspace::sequential_hcl(5,"Red-Yellow"), trans = "reverse") +
+    labs(title = "Top 10 Mortality Rate County in Year 2014", fill = "Mortality Rate") + 
+    theme_map() +
+    theme(legend.position = "bottom")
+p3
+```
+
+# Interactive Graph
+```{r}
+# Add data on NC map
+nameshp <- system.file("shape/nc.shp", package = "sf")
+map <- readOGR(nameshp, verbose = FALSE)
+map <- st_read(nameshp, quiet = TRUE)
+map <- st_transform(map, 4326)
+new_map <- merge(map, nc_map, by="FIPS")
+```
+
+```{r}
+# Add labels on the Graph
+label <- sprintf("<strong>%s</strong><br/>Mortality Rate: %s <br/>Percentage Change: %s",
+  new_map$NAME, round(new_map$mx, 2), round(new_map$pct_change, 2)) %>%
+  lapply(htmltools::HTML)
+
+l <- leaflet(new_map) %>% addTiles()
+
+pal <- colorNumeric(palette = "YlOrRd", domain = map$SMR)
+
+l %>% addPolygons(color = "grey", weight = 1, fillColor = ~pal(mx), fillOpacity = 0.5,
+    highlightOptions = highlightOptions(weight = 4),
+    label = label,
+    labelOptions = labelOptions(style = list("font-weight" = "normal", padding = "3px 8px"),
+    textsize = "15px", direction = "auto")) %>%
+    addLegend(pal = pal, values = ~mx, opacity = 0.5, title = "Mortality Rate", position = "bottomright")
+```
