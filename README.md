@@ -17,7 +17,7 @@ Project is created with:
 Some highlights: 
   - Drawing county-level map for mortality rate of breast cancer and percentage change between 2007 to 2014
   - Performing feature selection using LASSO and Elastic Net
-  - Fitting generalized mix effect models with spatial random effects for longitudinal, count data
+  - Fitting generalized mixed effect models with spatial random effects for longitudinal, count data
   - Mapping relative risk and exceedence probabilities using `R-Leaflet`
 
 ## Project Status
